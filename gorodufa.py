@@ -29,32 +29,41 @@ async def parse_and_download(bot: Bot):
     html = await fetch_html(URL_GORODUFA)
     soup = BeautifulSoup(html, 'html.parser')
 
-    titles = {tag.get_text(strip=True) for tag in soup.find_all(
-        ['title', 'h1', 'h2', 'h3']
-    )}
+    articles = soup.find_all(['h1', 'h2', 'h3'])
 
-    if any(SEARCH_TITLE in title for title in titles):
-        print('✅ Найден заголовок с нужной фразой!')
+    for article in articles:
+        if SEARCH_TITLE in article.get_text(strip=True):
 
-        for link in soup.find_all('a', href=True):
-            if 'Скачать' in link.text and link['href'].endswith('.pdf'):
-                file_url = link['href']
+            next_sibling = article.find_next('a', href=True)
+            while next_sibling:
+                if 'Скачать' in next_sibling.text and next_sibling['href'].endswith('.pdf'):
+                    file_url = next_sibling['href']
 
-                if not file_url.startswith('http'):
-                    file_url = 'https://gorodufa.ru' + file_url
+                    if not file_url.startswith('http'):
+                        file_url = 'https://gorodufa.ru' + file_url
 
-                if file_url in file_url_check:
+                    if file_url in file_url_check:
+                        return
+
+                    add_file_url(file_url)
+
+                    await bot.send_message(CHAT_ID,
+                                           f'🆕 Найдена новая публикация: "{article.get_text(strip=True)}"'
+                                           f'\nна {URL_GORODUFA}! '
+                                           f'[Скачать PDF]({file_url})',
+                                           parse_mode='Markdown')
+                    async def send_reminder():
+                        await asyncio.sleep(10)
+                        await bot.send_message(
+                            CHAT_ID,
+                            '⏰ Проверьте сайт https://gorodufa.ru/docs/ '
+                            '— сегодня могло выйти ещё одно объявление.'
+                        )
+
+                    asyncio.create_task(send_reminder())
                     return
+                next_sibling = next_sibling.find_next('a', href=True)
 
-                add_file_url(file_url)
-
-                await bot.send_message(CHAT_ID,
-                                       f'🆕 Найдена новая публикация'
-                                       f'\nна {URL_GORODUFA}! '
-                                       f'[Скачать PDF]({file_url})',
-                                       parse_mode='Markdown')
-
-                return
 
 async def main_gorodufa():
     """Основной цикл проверки сайта"""
@@ -63,6 +72,6 @@ async def main_gorodufa():
     try:
         while True:
             await parse_and_download(bot)
-            await asyncio.sleep(60*60*24)
+            await asyncio.sleep(60*60*24*3)
     finally:
         await bot.session.close()
